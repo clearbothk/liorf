@@ -56,6 +56,19 @@ struct MulranPointXYZIRT {
      (uint32_t, t, t) (int, ring, ring)
  )
 
+struct LivoxPointXYZIRT {
+    PCL_ADD_POINT4D
+    float intensity;
+    uint8_t tag;
+    uint8_t line;
+    float time;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+POINT_CLOUD_REGISTER_POINT_STRUCT(LivoxPointXYZIRT, 
+      (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)
+      (uint8_t, tag, tag)(uint8_t, line, line)(float, time, time)
+)
+
 // Use the Velodyne point format as a common representation
 using PointXYZIRT = VelodynePointXYZIRT;
 
@@ -93,6 +106,7 @@ private:
     pcl::PointCloud<PointXYZIRT>::Ptr laserCloudIn;
     pcl::PointCloud<OusterPointXYZIRT>::Ptr tmpOusterCloudIn;
     pcl::PointCloud<MulranPointXYZIRT>::Ptr tmpMulranCloudIn;
+    pcl::PointCloud<LivoxPointXYZIRT>::Ptr tmpLivoxCloudIn;
     pcl::PointCloud<PointType>::Ptr   fullCloud;
 
     int deskewFlag;
@@ -133,6 +147,7 @@ public:
     void allocateMemory()
     {
         laserCloudIn.reset(new pcl::PointCloud<PointXYZIRT>());
+        tmpLivoxCloudIn.reset(new pcl::PointCloud<LivoxPointXYZIRT>());
         tmpOusterCloudIn.reset(new pcl::PointCloud<OusterPointXYZIRT>());
         tmpMulranCloudIn.reset(new pcl::PointCloud<MulranPointXYZIRT>());
         fullCloud.reset(new pcl::PointCloud<PointType>());
@@ -276,6 +291,22 @@ public:
                 dst.time = src.timestamp - start_stamptime;
             }
         } 
+        else if (sensor== SensorType::LIVOX) {
+          pcl::moveFromROSMsg(currentCloudMsg, *tmpLivoxCloudIn);
+          laserCloudIn->points.resize(tmpLivoxCloudIn->size());
+          laserCloudIn->is_dense = tmpLivoxCloudIn->is_dense;
+          for (size_t i = 0; i < tmpLivoxCloudIn->size(); i++)
+          {
+            auto &src = tmpLivoxCloudIn->points[i];
+            auto &dst = laserCloudIn->points[i];
+            dst.x = src.x;
+            dst.y = src.y;
+            dst.z = src.z;
+            dst.intensity = src.intensity;
+            dst.ring = src.line;
+            dst.time = src.time;
+          }
+        }
         else {
             RCLCPP_ERROR_STREAM(get_logger(), "Unknown sensor type: " << int(sensor));
             rclcpp::shutdown();
@@ -300,7 +331,7 @@ public:
             ringFlag = -1;
             for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
             {
-                if (currentCloudMsg.fields[i].name == "ring")
+                if (currentCloudMsg.fields[i].name == "ring" || currentCloudMsg.fields[i].name == "line")
                 {
                     ringFlag = 1;
                     break;
